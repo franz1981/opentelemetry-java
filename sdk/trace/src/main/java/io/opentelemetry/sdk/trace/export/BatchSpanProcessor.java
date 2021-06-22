@@ -63,6 +63,24 @@ public final class BatchSpanProcessor implements SpanProcessor {
   BatchSpanProcessor(
       SpanExporter spanExporter,
       long scheduleDelayNanos,
+      int maxExportBatchSize,
+      long exporterTimeoutNanos,
+      int chunkSize) {
+    this.worker =
+        new Worker(
+            spanExporter,
+            scheduleDelayNanos,
+            maxExportBatchSize,
+            exporterTimeoutNanos,
+            JcTools.newMpscUnboundedXaddArrayQueue(chunkSize));
+    Thread workerThread = new DaemonThreadFactory(WORKER_THREAD_NAME).newThread(worker);
+    workerThread.start();
+  }
+
+  @SuppressWarnings("InconsistentOverloads")
+  BatchSpanProcessor(
+      SpanExporter spanExporter,
+      long scheduleDelayNanos,
       int maxQueueSize,
       int maxExportBatchSize,
       long exporterTimeoutNanos) {

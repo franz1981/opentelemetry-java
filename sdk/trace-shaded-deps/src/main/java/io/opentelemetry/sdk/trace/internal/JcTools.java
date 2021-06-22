@@ -8,15 +8,25 @@ package io.opentelemetry.sdk.trace.internal;
 import java.util.Queue;
 import org.jctools.queues.MessagePassingQueue;
 import org.jctools.queues.MpscArrayQueue;
+import org.jctools.queues.MpscUnboundedXaddArrayQueue;
 
 /** Internal accessor of JCTools package for fast queues. */
 public final class JcTools {
 
   /**
-   * Returns a new {@link Queue} appropriate for use with multiple producers and a single consumer.
+   * Returns a new bounded {@link Queue} appropriate for use with multiple producers and a single
+   * consumer.
    */
   public static <T> Queue<T> newMpscArrayQueue(int capacity) {
     return new MpscArrayQueue<>(capacity);
+  }
+
+  /**
+   * Returns a new unbounded {@link Queue} appropriate for use with multiple producers and a single
+   * consumer.
+   */
+  public static <T> Queue<T> newMpscUnboundedXaddArrayQueue(int chunkSize) {
+    return new MpscUnboundedXaddArrayQueue<>(chunkSize);
   }
 
   /**

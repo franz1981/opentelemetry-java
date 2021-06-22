@@ -28,6 +28,9 @@ import org.openjdk.jmh.annotations.Warmup;
 @State(Scope.Benchmark)
 public class BatchSpanProcessorBenchmark {
 
+  private static final String MPSC_ARRAY_Q = "MpscArrayQueue";
+  private static final String MPSC_UNBOUNDED_XADD_ARRAY_Q = "MpscUnboundedXaddArrayQueue";
+
   @Param({"0", "1", "5"})
   private int delayMs;
 
@@ -36,12 +39,26 @@ public class BatchSpanProcessorBenchmark {
 
   private List<Span> spans;
 
+  @Param({MPSC_ARRAY_Q, MPSC_UNBOUNDED_XADD_ARRAY_Q})
+  private String queueType;
+
   private BatchSpanProcessor processor;
 
   @Setup(Level.Trial)
   public final void setup() {
     SpanExporter exporter = new DelayingSpanExporter(delayMs);
-    processor = BatchSpanProcessor.builder(exporter).build();
+    BatchSpanProcessorBuilder builder = BatchSpanProcessor.builder(exporter);
+    switch (queueType) {
+      case MPSC_ARRAY_Q:
+        builder.setMaxQueueSize(spanCount * 5);
+        break;
+      case MPSC_UNBOUNDED_XADD_ARRAY_Q:
+        builder.unboundedQueueSize(spanCount * 5);
+        break;
+      default:
+        throw new IllegalArgumentException("Unknown qType = " + queueType);
+    }
+    processor = builder.build();
 
     ImmutableList.Builder<Span> spans = ImmutableList.builderWithExpectedSize(spanCount);
     Tracer tracer = SdkTracerProvider.builder().build().get("benchmarkTracer");
@@ -58,7 +75,7 @@ public class BatchSpanProcessorBenchmark {
 
   /** Export spans through {@link BatchSpanProcessor}. */
   @Benchmark
-  @Fork(1)
+  @Fork(2)
   @Threads(5)
   @Warmup(iterations = 5, time = 1)
   @Measurement(iterations = 10, time = 1)
