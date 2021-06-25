@@ -12,6 +12,8 @@ dependencies {
 // invoke jmh on a single benchmark class like so:
 //   ./gradlew -PjmhIncludeSingleClass=StatsTraceContextBenchmark clean :grpc-core:jmh
 jmh {
+    // jvmArgsAppend.add("-XX:+UnlockDiagnosticVMOptions")
+    jvmArgsAppend.add("-XX:+UnlockDiagnosticVMOptions -XX:+DebugNonSafepoints")
     failOnError.set(true)
     resultFormat.set("JSON")
     // Otherwise an error will happen:

@@ -31,10 +31,10 @@ public class BatchSpanProcessorBenchmark {
   private static final String MPSC_ARRAY_Q = "MpscArrayQueue";
   private static final String MPSC_UNBOUNDED_XADD_ARRAY_Q = "MpscUnboundedXaddArrayQueue";
 
-  @Param({"0", "1", "5"})
+  @Param({"0"})
   private int delayMs;
 
-  @Param({"1000", "2000", "5000"})
+  @Param({"1000"})
   private int spanCount;
 
   private List<Span> spans;
@@ -50,10 +50,10 @@ public class BatchSpanProcessorBenchmark {
     BatchSpanProcessorBuilder builder = BatchSpanProcessor.builder(exporter);
     switch (queueType) {
       case MPSC_ARRAY_Q:
-        builder.setMaxQueueSize(spanCount * 5);
+        builder.setMaxQueueSize(spanCount * 5 * 2);
         break;
       case MPSC_UNBOUNDED_XADD_ARRAY_Q:
-        builder.unboundedQueueSize(spanCount * 5);
+        builder.unboundedQueueSize(spanCount * 5 * 2, spanCount * 5 * 2);
         break;
       default:
         throw new IllegalArgumentException("Unknown qType = " + queueType);
@@ -78,7 +78,7 @@ public class BatchSpanProcessorBenchmark {
   @Fork(2)
   @Threads(5)
   @Warmup(iterations = 5, time = 1)
-  @Measurement(iterations = 10, time = 1)
+  @Measurement(iterations = 20, time = 1)
   @OutputTimeUnit(TimeUnit.SECONDS)
   public void export() {
     for (Span span : spans) {

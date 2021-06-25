@@ -26,7 +26,7 @@ public final class BatchSpanProcessorBuilder {
   private final SpanExporter spanExporter;
   private long scheduleDelayNanos = TimeUnit.MILLISECONDS.toNanos(DEFAULT_SCHEDULE_DELAY_MILLIS);
   private int maxQueueSize = DEFAULT_MAX_QUEUE_SIZE;
-  private int chunkSize = DEFAULT_MAX_QUEUE_SIZE;
+  private int chunkSize = -1;
   private int maxExportBatchSize = DEFAULT_MAX_EXPORT_BATCH_SIZE;
   private long exporterTimeoutNanos = TimeUnit.MILLISECONDS.toNanos(DEFAULT_EXPORT_TIMEOUT_MILLIS);
 
@@ -35,8 +35,8 @@ public final class BatchSpanProcessorBuilder {
   }
 
   /** Sets the an unbounded queue with specific chunk size. */
-  public BatchSpanProcessorBuilder unboundedQueueSize(int chunkSize) {
-    maxQueueSize = -1;
+  public BatchSpanProcessorBuilder unboundedQueueSize(int chunkSize, int softQueueSizeLimit) {
+    this.maxQueueSize = softQueueSizeLimit;
     this.chunkSize = chunkSize;
     return this;
   }
@@ -108,6 +108,7 @@ public final class BatchSpanProcessorBuilder {
    * @see BatchSpanProcessorBuilder#DEFAULT_MAX_QUEUE_SIZE
    */
   public BatchSpanProcessorBuilder setMaxQueueSize(int maxQueueSize) {
+    this.chunkSize = -1;
     this.maxQueueSize = maxQueueSize;
     return this;
   }
@@ -146,11 +147,12 @@ public final class BatchSpanProcessorBuilder {
    * @throws NullPointerException if the {@code spanExporter} is {@code null}.
    */
   public BatchSpanProcessor build() {
-    if (maxQueueSize >= 0) {
+    if (chunkSize < 0) {
       return new BatchSpanProcessor(
           spanExporter, scheduleDelayNanos, maxQueueSize, maxExportBatchSize, exporterTimeoutNanos);
     }
     return new BatchSpanProcessor(
-        spanExporter, scheduleDelayNanos, maxExportBatchSize, exporterTimeoutNanos, chunkSize);
+        spanExporter, scheduleDelayNanos, maxExportBatchSize, exporterTimeoutNanos, chunkSize,
+        maxQueueSize);
   }
 }

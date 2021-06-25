@@ -36,8 +36,13 @@ public class BatchSpanProcessorMultiThreadBenchmark {
     private Tracer tracer;
     private int numThreads = 1;
 
+    private static final String MPSC_ARRAY_Q = "MpscArrayQueue";
+    private static final String MPSC_UNBOUNDED_XADD_ARRAY_Q = "MpscUnboundedXaddArrayQueue";
+
     @Param({"0"})
     private int delayMs;
+    @Param({MPSC_ARRAY_Q, MPSC_UNBOUNDED_XADD_ARRAY_Q})
+    private String queueType;
 
     private long exportedSpans;
     private long droppedSpans;
@@ -46,7 +51,18 @@ public class BatchSpanProcessorMultiThreadBenchmark {
     public final void setup() {
       sdkMeterProvider = SdkMeterProvider.builder().buildAndRegisterGlobal();
       SpanExporter exporter = new DelayingSpanExporter(delayMs);
-      processor = BatchSpanProcessor.builder(exporter).build();
+      BatchSpanProcessorBuilder builder = BatchSpanProcessor.builder(exporter);
+      switch (queueType) {
+        case MPSC_ARRAY_Q:
+          builder.setMaxQueueSize(2048);
+          break;
+        case MPSC_UNBOUNDED_XADD_ARRAY_Q:
+          builder.unboundedQueueSize(2048, 2048);
+          break;
+        default:
+          throw new IllegalArgumentException("Unknown qType = " + queueType);
+      }
+      processor = builder.build();
       tracer =
           SdkTracerProvider.builder().addSpanProcessor(processor).build().get("benchmarkTracer");
     }
@@ -81,7 +97,7 @@ public class BatchSpanProcessorMultiThreadBenchmark {
   }
 
   @Benchmark
-  @Fork(1)
+  @Fork(2)
   @Threads(1)
   @Warmup(iterations = 1, time = 1)
   @Measurement(iterations = 5, time = 5)
@@ -95,7 +111,7 @@ public class BatchSpanProcessorMultiThreadBenchmark {
   }
 
   @Benchmark
-  @Fork(1)
+  @Fork(2)
   @Threads(2)
   @Warmup(iterations = 1, time = 1)
   @Measurement(iterations = 5, time = 5)
@@ -109,7 +125,7 @@ public class BatchSpanProcessorMultiThreadBenchmark {
   }
 
   @Benchmark
-  @Fork(1)
+  @Fork(2)
   @Threads(5)
   @Warmup(iterations = 1, time = 1)
   @Measurement(iterations = 5, time = 5)
@@ -123,7 +139,7 @@ public class BatchSpanProcessorMultiThreadBenchmark {
   }
 
   @Benchmark
-  @Fork(1)
+  @Fork(2)
   @Threads(10)
   @Warmup(iterations = 1, time = 1)
   @Measurement(iterations = 5, time = 5)
@@ -137,7 +153,7 @@ public class BatchSpanProcessorMultiThreadBenchmark {
   }
 
   @Benchmark
-  @Fork(1)
+  @Fork(2)
   @Threads(20)
   @Warmup(iterations = 1, time = 1)
   @Measurement(iterations = 5, time = 5)

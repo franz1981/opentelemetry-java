@@ -65,14 +65,16 @@ public final class BatchSpanProcessor implements SpanProcessor {
       long scheduleDelayNanos,
       int maxExportBatchSize,
       long exporterTimeoutNanos,
-      int chunkSize) {
+      int chunkSize,
+      int softMaxQueueSize) {
     this.worker =
         new Worker(
             spanExporter,
             scheduleDelayNanos,
             maxExportBatchSize,
             exporterTimeoutNanos,
-            JcTools.newMpscUnboundedXaddArrayQueue(chunkSize));
+            JcTools.newMpscUnboundedXaddArrayQueue(chunkSize),
+            softMaxQueueSize);
     Thread workerThread = new DaemonThreadFactory(WORKER_THREAD_NAME).newThread(worker);
     workerThread.start();
   }
@@ -161,6 +163,8 @@ public final class BatchSpanProcessor implements SpanProcessor {
     private final AtomicReference<CompletableResultCode> flushRequested = new AtomicReference<>();
     private volatile boolean continueWork = true;
     private final ArrayList<SpanData> batch;
+    private final AtomicInteger softMaxQueueSize;
+    private final int qCapacity;
 
     private Worker(
         SpanExporter spanExporter,
@@ -168,6 +172,16 @@ public final class BatchSpanProcessor implements SpanProcessor {
         int maxExportBatchSize,
         long exporterTimeoutNanos,
         Queue<ReadableSpan> queue) {
+      this(spanExporter, scheduleDelayNanos, maxExportBatchSize, exporterTimeoutNanos, queue, -1);
+    }
+
+    private Worker(
+        SpanExporter spanExporter,
+        long scheduleDelayNanos,
+        int maxExportBatchSize,
+        long exporterTimeoutNanos,
+        Queue<ReadableSpan> queue,
+        int softMaxQueueSize) {
       this.spanExporter = spanExporter;
       this.scheduleDelayNanos = scheduleDelayNanos;
       this.maxExportBatchSize = maxExportBatchSize;
@@ -201,13 +215,29 @@ public final class BatchSpanProcessor implements SpanProcessor {
               Labels.of(SPAN_PROCESSOR_TYPE_LABEL, SPAN_PROCESSOR_TYPE_VALUE, "dropped", "false"));
 
       this.batch = new ArrayList<>(this.maxExportBatchSize);
+      this.softMaxQueueSize = softMaxQueueSize >= 0 ? new AtomicInteger(0) : null;
+      this.qCapacity = softMaxQueueSize;
     }
 
     private void addSpan(ReadableSpan span) {
-      if (!queue.offer(span)) {
-        droppedSpans.add(1);
+      final AtomicInteger qSize = this.softMaxQueueSize;
+      if (qSize == null) {
+        if (!queue.offer(span)) {
+          droppedSpans.add(1);
+        } else {
+          if (queue.size() >= spansNeeded.get()) {
+            signal.offer(true);
+          }
+        }
       } else {
-        if (queue.size() >= spansNeeded.get()) {
+        final int size = qSize.get();
+        if (size >= qCapacity) {
+          droppedSpans.add(1);
+          return;
+        }
+        queue.offer(span);
+        final int newSize = softMaxQueueSize.incrementAndGet();
+        if (newSize >= spansNeeded.get()) {
           signal.offer(true);
         }
       }
@@ -221,8 +251,14 @@ public final class BatchSpanProcessor implements SpanProcessor {
         if (flushRequested.get() != null) {
           flush();
         }
+        final AtomicInteger queueSize = this.softMaxQueueSize;
+        int polled = 0;
         while (!queue.isEmpty() && batch.size() < maxExportBatchSize) {
           batch.add(queue.poll().toSpanData());
+          polled++;
+        }
+        if (queueSize != null) {
+          queueSize.getAndAdd(-polled);
         }
         if (batch.size() >= maxExportBatchSize || System.nanoTime() >= nextExportTime) {
           exportCurrentBatch();
@@ -246,13 +282,27 @@ public final class BatchSpanProcessor implements SpanProcessor {
 
     private void flush() {
       int spansToFlush = queue.size();
+      final AtomicInteger qSize = this.softMaxQueueSize;
+      int count = 0;
       while (spansToFlush > 0) {
         ReadableSpan span = queue.poll();
+        count++;
         assert span != null;
         batch.add(span.toSpanData());
         spansToFlush--;
         if (batch.size() >= maxExportBatchSize) {
+          if (count > 0) {
+            if (qSize != null) {
+              qSize.getAndAdd(-count);
+            }
+            count = 0;
+          }
           exportCurrentBatch();
+        }
+      }
+      if (count > 0) {
+        if (qSize != null) {
+          qSize.getAndAdd(-count);
         }
       }
       exportCurrentBatch();
